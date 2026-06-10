@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>maasto — {{ spot.name }}</title>
+<style>{{ css }}</style>
+</head>
+<body>
+
+<h1>{{ spot.name }}</h1>
+<p class="meta">
+  <strong>Coords :</strong> {{ "%.4f"|format(coords.lat) }}°N, {{ "%.4f"|format(coords.lon) }}°E
+  &nbsp;·&nbsp; <strong>Altitude :</strong> {{ elevation_m or "?" }} m
+  {% if spot.region %}&nbsp;·&nbsp; <strong>Région :</strong> {{ spot.region }}{% endif %}
+  &nbsp;·&nbsp; <strong>Généré le :</strong> {{ generated_at }}
+</p>
+
+{% if c2c_signal and c2c_signal.discordance %}
+<div class="alert danger">
+  <strong>⚠️ Alerte signal terrain :</strong> {{ c2c_signal.verdict }}
+</div>
+{% endif %}
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Cellule modèle</div>
+    <div class="value">{{ weather.cell.elevation }} m</div>
+    <div class="delta">Représentativité {{ "+" if weather.cell.elevation - elevation_m >= 0 else "" }}{{ (weather.cell.elevation or 0) - (elevation_m or 0)|int }} m</div>
+  </div>
+  {% if freezing_today %}
+  <div class="card">
+    <div class="label">Iso 0 °C aujourd'hui</div>
+    <div class="value">{{ freezing_today|int }} m</div>
+    <div class="delta">Limite pluie/neige</div>
+  </div>
+  {% endif %}
+  {% if sun_today %}
+  <div class="card">
+    <div class="label">Lever / coucher</div>
+    <div class="value">{{ sun_today.sunrise }} &middot; {{ sun_today.sunset }}</div>
+    <div class="delta">Local time</div>
+  </div>
+  {% endif %}
+  {% if bera.level %}
+  <div class="card">
+    <div class="label">{{ bera.source }} — {{ bera.massif or "" }}</div>
+    <div class="value">{{ bera.level }}/5 — {{ bera.level_label or "" }}</div>
+    <div class="delta"><a href="{{ bera.url }}">Bulletin</a></div>
+  </div>
+  {% endif %}
+</div>
+
+<h2>Profil neige multi-altitudes</h2>
+
+<table>
+  <thead><tr>
+    <th>Altitude</th>
+    <th class="num">Snow début ({{ first_date }})</th>
+    <th class="num">Snow fin ({{ last_date }})</th>
+    <th class="num">Variation</th>
+    <th class="num">Tmax sur fenêtre</th>
+    <th class="num">Tmin sur fenêtre</th>
+    <th class="num">Précip. cumulée</th>
+  </tr></thead>
+  <tbody>
+  {% for level in levels_summary %}
+  <tr>
+    <td><strong>{{ level.altitude }} m</strong></td>
+    <td class="num snow">{{ "%.2f"|format(level.first) }} m</td>
+    <td class="num snow">{{ "%.2f"|format(level.last) }} m</td>
+    <td class="num {% if level.delta < 0 %}cold{% elif level.delta > 0 %}warm{% endif %}">
+      {{ "%+.0f"|format(level.delta * 100) }} cm
+    </td>
+    <td class="num warm">{{ "%+.1f"|format(level.tmax) }} °C</td>
+    <td class="num cold">{{ "%+.1f"|format(level.tmin) }} °C</td>
+    <td class="num">{{ "%.0f"|format(level.precip) }} mm</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if snow_chart_svg %}
+{{ snow_chart_svg|safe }}
+{% endif %}
+
+<div class="caveat">
+  <strong>Caveat modèle :</strong> les valeurs <code>snow_depth</code> viennent
+  d'Open-Meteo (modèle Météo, pas mesure terrain). ±20-30 cm de marge sur les valeurs absolues.
+  Les <em>variations</em> sont fiables. Pour une mesure réelle : SLF/IMIS (Suisse) ou Nivose (France).
+</div>
+
+<h2>Imagerie satellite Sentinel-2</h2>
+
+{% if satellite_images %}
+<div class="images">
+  {% for img in satellite_images %}
+  <figure>
+    <img src="{{ img.path }}" alt="Sentinel-2 {{ img.date }}">
+    <figcaption>{{ img.date }} — couverture nuageuse {{ "%.1f"|format(img.cloud) }}%</figcaption>
+  </figure>
+  {% endfor %}
+</div>
+{% else %}
+<p class="unavail">Pas d'image Sentinel-2 exploitable (couverture nuageuse trop élevée sur la fenêtre).</p>
+{% endif %}
+
+{% if all_scenes %}
+<details>
+  <summary class="meta">Toutes les acquisitions sur la fenêtre ({{ all_scenes|length }})</summary>
+  <table>
+    <thead><tr><th>Date</th><th class="num">Nuages</th><th>ID</th></tr></thead>
+    <tbody>
+      {% for s in all_scenes %}
+      <tr>
+        <td>{{ s.date }}</td>
+        <td class="num">{{ "%.1f"|format(s.cloud_cover) }}%</td>
+        <td><code style="font-size:0.75rem">{{ s.id }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+
+<h2>Signal terrain (Camptocamp)</h2>
+{% if c2c_signal and c2c_signal.available %}
+<div class="alert {{ c2c_signal.level }}">
+  <strong>{{ c2c_signal.verdict }}</strong>
+</div>
+<div class="cards">
+  <div class="card">
+    <div class="label">Sorties analysées</div>
+    <div class="value">{{ c2c_signal.total }}</div>
+    <div class="delta">{{ c2c_signal.date_min }} → {{ c2c_signal.date_max }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Part activités neige</div>
+    <div class="value">{{ (c2c_signal.snow_ratio * 100)|int }} %</div>
+    <div class="delta">{{ c2c_signal.snow_count }} neige · {{ c2c_signal.dry_count }} sec</div>
+  </div>
+  {% if c2c_signal.min_snow_alt %}
+  <div class="card">
+    <div class="label">Borne haute limite neige</div>
+    <div class="value">{{ c2c_signal.min_snow_alt }} m</div>
+    <div class="delta">Alt min observée en ski-rando / raquettes</div>
+  </div>
+  {% endif %}
+  {% if c2c_signal.median_alt %}
+  <div class="card">
+    <div class="label">Altitude médiane des sorties</div>
+    <div class="value">{{ c2c_signal.median_alt }} m</div>
+    <div class="delta">Pour info</div>
+  </div>
+  {% endif %}
+</div>
+<details>
+  <summary class="meta">Répartition détaillée des activités</summary>
+  <table>
+    <thead><tr><th>Activité</th><th class="num">Nombre</th></tr></thead>
+    <tbody>
+    {% for act, n in c2c_signal.activities.items() %}
+      <tr><td>{{ act }}</td><td class="num">{{ n }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% else %}
+<p class="unavail">Pas assez de sorties Camptocamp dans la zone pour un signal terrain.</p>
+{% endif %}
+
+<h3>Détail des sorties</h3>
+{% if outings %}
+<ul class="outings">
+  {% for o in outings %}
+  <li>
+    <span><a href="{{ o.url }}">{{ o.title }}</a>
+      {% if o.activities %}<span class="meta-line">— {{ o.activities|join(", ") }}</span>{% endif %}</span>
+    <span class="meta-line">{{ o.date_start or "" }}{% if o.elevation_max %} · {{ o.elevation_max }} m{% endif %}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="unavail">Aucune sortie Camptocamp publiée dans les 30 derniers jours dans cette zone.</p>
+{% endif %}
+
+<h2>Détail météo journalière (cellule modèle, {{ weather.cell.elevation }} m)</h2>
+<table>
+  <thead><tr>
+    <th>Date</th><th class="num">Tmin</th><th class="num">Tmax</th>
+    <th class="num">Précip</th><th class="num">Pluie</th><th class="num">Neige</th>
+  </tr></thead>
+  <tbody>
+    {% for d in cell_daily %}
+    <tr>
+      <td>{{ d.date }}</td>
+      <td class="num cold">{{ "%+.1f"|format(d.tmin) }}</td>
+      <td class="num warm">{{ "%+.1f"|format(d.tmax) }}</td>
+      <td class="num">{{ "%.1f"|format(d.precip) }} mm</td>
+      <td class="num">{{ "%.1f"|format(d.rain) }} mm</td>
+      <td class="num snow">{{ "%.1f"|format(d.snow_cm) }} cm</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<footer>
+  Généré par <code>maasto</code> · sources : Open-Meteo, Sentinel-2 (Element84/AWS),
+  Nominatim, Open-Elevation, Camptocamp, AllTrails, {{ bera.source }}.
+</footer>
+
+</body>
+</html>

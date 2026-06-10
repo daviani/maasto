@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+results/*/
+images/*.tif
+images/*.png
+!images/.gitkeep
+
+# Outillage IA (privé) + données perso
+.claude/
+CLAUDE.md
